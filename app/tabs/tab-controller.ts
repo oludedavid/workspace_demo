@@ -27,6 +27,11 @@ interface CachedTabItem {
   item: TabItem;
 }
 
+export type TabControllerOptions<TModel> = {
+  createStartPage?: (controller: TabController<TModel>) => TabItem;
+  startPage?: TabItem;
+};
+
 type AddTabOptions = {
   active?: boolean;
 };
@@ -36,10 +41,9 @@ type CreateTabsOptions = {
 };
 
 export class TabController<TModel> {
-  private state: RuntimeTabState = {
-    items: [],
-    activeTabId: undefined,
-  };
+  private state: RuntimeTabState;
+
+  private startPage?: TabItem;
 
   /**
    * Keeps rendered tab items stable while the source model version is unchanged.
@@ -52,7 +56,15 @@ export class TabController<TModel> {
    */
   private listeners = new Set<() => void>();
 
-  constructor(private adapter: TabControllerAdapter<TModel>) {}
+  constructor(
+    private adapter: TabControllerAdapter<TModel>,
+    options?: TabControllerOptions<TModel>,
+  ) {
+    const startPage = options?.createStartPage?.(this) ?? options?.startPage;
+
+    this.startPage = startPage ? this.normalizeStartPage(startPage) : undefined;
+    this.state = this.createStartState();
+  }
 
   /**
    * Returns the current store snapshot. React calls this after emit() tells it
@@ -74,10 +86,17 @@ export class TabController<TModel> {
   };
 
   /**
-   * Replaces the current tab list from domain models.
+   * Replaces the current tab list from domain models. Empty lists fall back to
+   * the feature start page when one exists.
    */
   createTabs = (models: TModel[], options?: CreateTabsOptions) => {
     const items = models.map((model) => this.createTabItemFromModel(model));
+
+    if (items.length === 0) {
+      this.state = this.createStartState();
+      this.emit();
+      return;
+    }
 
     const preferredActiveTabId = options?.activeTabId ?? this.state.activeTabId;
     const nextActiveTabId = this.resolveActiveTabId(
@@ -94,7 +113,8 @@ export class TabController<TModel> {
   };
 
   /**
-   * Adds or refreshes one model-backed tab.
+   * Adds or refreshes one model-backed tab. The first real tab replaces the
+   * start page instead of being appended after it.
    */
   addTab = (model: TModel, options?: AddTabOptions) => {
     const item = this.createTabItemFromModel(model);
@@ -103,7 +123,8 @@ export class TabController<TModel> {
   };
 
   /**
-   * Adds or refreshes one already-renderable tab item.
+   * Adds or refreshes one already-renderable tab item. The first real tab
+   * replaces the start page instead of being appended after it.
    */
   addView = (item: TabItem, options?: AddTabOptions) => {
     this.cache.set(item.id, {
@@ -133,10 +154,27 @@ export class TabController<TModel> {
   };
 
   /**
-   * Removes a tab and chooses a replacement active tab when needed.
+   * Removes a real tab and chooses a replacement active tab when needed. The
+   * start page cannot be closed, and returns when the last real tab is closed.
    */
   closeTab = (tabId: TabId) => {
+    if (this.isStartPageId(tabId)) {
+      return;
+    }
+
+    const tabExists = this.state.items.some((item) => item.id === tabId);
+
+    if (!tabExists) {
+      return;
+    }
+
     const nextItems = this.state.items.filter((item) => item.id !== tabId);
+
+    if (nextItems.length === 0) {
+      this.state = this.createStartState();
+      this.emit();
+      return;
+    }
 
     const wasActiveTab = this.state.activeTabId === tabId;
 
@@ -153,13 +191,19 @@ export class TabController<TModel> {
   };
 
   /**
-   * Clears all runtime tabs.
+   * Clears all runtime tabs and restores the feature start page when one exists.
    */
   clear = () => {
-    this.state = {
-      items: [],
-      activeTabId: undefined,
-    };
+    this.state = this.createStartState();
+
+    this.emit();
+  };
+
+  /**
+   * Explicitly returns the feature to its start page.
+   */
+  resetToStartPage = () => {
+    this.state = this.createStartState();
 
     this.emit();
   };
@@ -214,19 +258,27 @@ export class TabController<TModel> {
    * Inserts a new tab or replaces an existing tab with the same id.
    */
   private upsertItem = (item: TabItem, options?: AddTabOptions) => {
-    const itemAlreadyExists = this.state.items.some(
-      (currentItem) => currentItem.id === item.id,
-    );
+    const itemAlreadyExists = this.state.items.some((currentItem) => {
+      return currentItem.id === item.id;
+    });
+    let items: TabItem[];
 
-    const items = itemAlreadyExists
-      ? this.state.items.map((currentItem) =>
-          currentItem.id === item.id ? item : currentItem,
-        )
-      : [...this.state.items, item];
+    if (itemAlreadyExists) {
+      items = this.state.items.map((currentItem) => {
+        return currentItem.id === item.id ? item : currentItem;
+      });
+    } else if (this.isStartOnlyState()) {
+      items = [item];
+    } else {
+      items = [...this.state.items, item];
+    }
+
+    const preferredActiveTabId =
+      options?.active === false ? this.state.activeTabId : item.id;
 
     this.state = {
       items,
-      activeTabId: options?.active === false ? this.state.activeTabId : item.id,
+      activeTabId: this.resolveActiveTabId(items, preferredActiveTabId),
     };
 
     this.emit();
@@ -245,6 +297,44 @@ export class TabController<TModel> {
     const firstEnabledTab = items.find((item) => !item.disabled);
 
     return preferredTab?.id ?? firstEnabledTab?.id ?? items[0]?.id;
+  };
+
+  /**
+   * The start page is a non-closable placeholder, not a normal runtime tab.
+   */
+  private normalizeStartPage = (startPage: TabItem): TabItem => {
+    return {
+      ...startPage,
+      closable: false,
+      dirty: false,
+      disabled: false,
+    };
+  };
+
+  private createStartState = (): RuntimeTabState => {
+    if (!this.startPage) {
+      return {
+        items: [],
+        activeTabId: undefined,
+      };
+    }
+
+    return {
+      items: [this.startPage],
+      activeTabId: this.startPage.id,
+    };
+  };
+
+  private isStartPageId = (tabId: TabId) => {
+    return this.startPage?.id === tabId;
+  };
+
+  private isStartOnlyState = () => {
+    return (
+      this.startPage !== undefined &&
+      this.state.items.length === 1 &&
+      this.state.items[0]?.id === this.startPage.id
+    );
   };
 
   /**

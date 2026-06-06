@@ -1,15 +1,20 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import { TabController, type TabControllerAdapter } from "./tab-controller";
+import {
+  TabController,
+  type TabControllerAdapter,
+  type TabControllerOptions,
+} from "./tab-controller";
 
 export function useCreateTabController<TModel>(
   adapter: TabControllerAdapter<TModel>,
+  options?: TabControllerOptions<TModel>,
 ) {
-  // Keep one controller instance for the lifetime of this adapter.
+  // Keep one controller instance for the lifetime of this adapter/options pair.
   return useMemo(() => {
-    return new TabController<TModel>(adapter);
-  }, [adapter]);
+    return new TabController<TModel>(adapter, options);
+  }, [adapter, options]);
 }
 
 export function useTabControllerState<TModel>(
