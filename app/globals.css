@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "dockview-react/dist/styles/dockview.css";
 
 :root {
   --background: #ffffff;
