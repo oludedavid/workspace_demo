@@ -1,21 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Tabs from "../tabs/api";
 import {
-  type TabController,
+  TabController,
   type TabControllerAdapter,
   type TabControllerOptions,
 } from "../tabs/tab-controller";
-import {
-  useCreateTabController,
-  useTabControllerState,
-} from "../tabs/useTabController";
+import { useTabControllerState } from "../tabs/useTabController";
 import { splitWorkspaceItems } from "./data";
 import { renderSplitWorkspaceItem } from "./renderer";
 import type { SplitWorkspaceItem } from "./type";
 
-type PaneId = "left" | "right";
+type PaneId = string;
+
+interface SplitPane {
+  id: PaneId;
+  label: string;
+  controller: TabController<SplitWorkspaceItem>;
+}
+
+const INITIAL_PANE_COUNT = 2;
+const MIN_PANE_PERCENT = 12;
 
 const splitTabAdapter: TabControllerAdapter<SplitWorkspaceItem> = {
   getId: (item) => item.id,
@@ -94,6 +100,81 @@ function createPaneOptions(
   };
 }
 
+function createSplitPane(paneNumber: number): SplitPane {
+  const id = `pane-${paneNumber}`;
+  const label = `Pane ${paneNumber}`;
+
+  return {
+    id,
+    label,
+    controller: new TabController(
+      splitTabAdapter,
+      createPaneOptions(id, label),
+    ),
+  };
+}
+
+function createInitialPanes() {
+  return Array.from({ length: INITIAL_PANE_COUNT }, (_, index) => {
+    return createSplitPane(index + 1);
+  });
+}
+
+function createInitialPaneSizes() {
+  return Array.from({ length: INITIAL_PANE_COUNT }, () => {
+    return 100 / INITIAL_PANE_COUNT;
+  });
+}
+
+function appendPaneSize(currentSizes: number[]) {
+  const nextPaneSize = Math.max(
+    MIN_PANE_PERCENT,
+    100 / (currentSizes.length + 1),
+  );
+  const totalCurrentSize = currentSizes.reduce((total, size) => {
+    return total + size;
+  }, 0);
+  const remainingSize = 100 - nextPaneSize;
+  const resizeRatio = remainingSize / totalCurrentSize;
+
+  return [
+    ...currentSizes.map((size) => {
+      return size * resizeRatio;
+    }),
+    nextPaneSize,
+  ];
+}
+
+function resizePanePair(
+  sizes: number[],
+  dividerIndex: number,
+  pointerPercent: number,
+) {
+  const leftPaneSize = sizes[dividerIndex];
+  const rightPaneSize = sizes[dividerIndex + 1];
+
+  if (leftPaneSize === undefined || rightPaneSize === undefined) {
+    return sizes;
+  }
+
+  const sizeBeforePair = sizes.slice(0, dividerIndex).reduce((total, size) => {
+    return total + size;
+  }, 0);
+  const pairSize = leftPaneSize + rightPaneSize;
+  const minimumPaneSize = Math.min(MIN_PANE_PERCENT, pairSize / 2);
+  const rawLeftSize = pointerPercent - sizeBeforePair;
+  const nextLeftSize = Math.min(
+    pairSize - minimumPaneSize,
+    Math.max(minimumPaneSize, rawLeftSize),
+  );
+  const nextSizes = [...sizes];
+
+  nextSizes[dividerIndex] = nextLeftSize;
+  nextSizes[dividerIndex + 1] = pairSize - nextLeftSize;
+
+  return nextSizes;
+}
+
 function PaneTabs({
   controller,
   id,
@@ -133,21 +214,28 @@ function PaneTabs({
 
 export default function SplitWorkspacePage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [leftSize, setLeftSize] = useState(50);
-  const [isResizing, setIsResizing] = useState(false);
+  const nextPaneNumber = useRef(INITIAL_PANE_COUNT + 1);
+  const [panes, setPanes] = useState(createInitialPanes);
+  const [paneSizes, setPaneSizes] = useState(createInitialPaneSizes);
+  const [resizingDividerIndex, setResizingDividerIndex] = useState<
+    number | null
+  >(null);
 
-  const leftOptions = useMemo(() => {
-    return createPaneOptions("left", "Left Pane");
-  }, []);
-  const rightOptions = useMemo(() => {
-    return createPaneOptions("right", "Right Pane");
-  }, []);
+  const addPane = useCallback(() => {
+    const pane = createSplitPane(nextPaneNumber.current);
 
-  const leftController = useCreateTabController(splitTabAdapter, leftOptions);
-  const rightController = useCreateTabController(splitTabAdapter, rightOptions);
+    nextPaneNumber.current += 1;
+
+    setPanes((currentPanes) => {
+      return [...currentPanes, pane];
+    });
+    setPaneSizes((currentSizes) => {
+      return appendPaneSize(currentSizes);
+    });
+  }, []);
 
   useEffect(() => {
-    if (!isResizing) {
+    if (resizingDividerIndex === null) {
       return;
     }
 
@@ -159,13 +247,20 @@ export default function SplitWorkspacePage() {
       }
 
       const bounds = container.getBoundingClientRect();
-      const nextSize = ((event.clientX - bounds.left) / bounds.width) * 100;
+      const pointerPercent =
+        ((event.clientX - bounds.left) / bounds.width) * 100;
 
-      setLeftSize(Math.min(75, Math.max(25, nextSize)));
+      setPaneSizes((currentSizes) => {
+        return resizePanePair(
+          currentSizes,
+          resizingDividerIndex,
+          pointerPercent,
+        );
+      });
     };
 
     const handlePointerUp = () => {
-      setIsResizing(false);
+      setResizingDividerIndex(null);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -175,47 +270,66 @@ export default function SplitWorkspacePage() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [isResizing]);
+  }, [resizingDividerIndex]);
 
   return (
     <main className="flex h-dvh min-h-0 flex-col bg-zinc-100 p-4 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-      <header className="mb-3 shrink-0">
-        <p className="text-sm font-medium uppercase text-sky-600 dark:text-sky-400">
-          Split Workspace
-        </p>
-        <h1 className="text-2xl font-semibold">Two Independent Tab Panes</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Each side owns a separate tab controller. Drag the divider to resize.
-        </p>
+      <header className="mb-3 flex shrink-0 items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium uppercase text-sky-600 dark:text-sky-400">
+            Split Workspace
+          </p>
+          <h1 className="text-2xl font-semibold">Independent Tab Panes</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Each pane owns a separate tab controller. New panes open to the
+            right.
+          </p>
+        </div>
+
+        <button
+          className="shrink-0 border border-zinc-300 bg-white px-3 py-2 text-sm font-medium transition-colors hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+          onClick={addPane}
+          type="button"
+        >
+          + Pane
+        </button>
       </header>
 
       <div
         className="flex min-h-0 flex-1 overflow-hidden"
         ref={containerRef}
       >
-        <div
-          className="flex min-w-0"
-          style={{ flexBasis: `${leftSize}%` }}
-        >
-          <PaneTabs controller={leftController} id="left" label="Left Pane" />
-        </div>
+        {panes.map((pane, index) => (
+          <div
+            className="contents"
+            key={pane.id}
+          >
+            <div
+              className="flex min-w-0"
+              style={{ flexBasis: `${paneSizes[index]}%` }}
+            >
+              <PaneTabs
+                controller={pane.controller}
+                id={pane.id}
+                label={pane.label}
+              />
+            </div>
 
-        <div
-          aria-label="Resize split panes"
-          className="w-2 shrink-0 cursor-col-resize bg-zinc-200 transition-colors hover:bg-sky-500 dark:bg-zinc-800 dark:hover:bg-sky-500"
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setIsResizing(true);
-          }}
-          role="separator"
-        />
-
-        <div
-          className="flex min-w-0 flex-1"
-          style={{ flexBasis: `${100 - leftSize}%` }}
-        >
-          <PaneTabs controller={rightController} id="right" label="Right Pane" />
-        </div>
+            {index < panes.length - 1 ? (
+              <div
+                aria-label={`Resize ${pane.label} and ${
+                  panes[index + 1]?.label
+                }`}
+                className="w-2 shrink-0 cursor-col-resize bg-zinc-200 transition-colors hover:bg-sky-500 dark:bg-zinc-800 dark:hover:bg-sky-500"
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setResizingDividerIndex(index);
+                }}
+                role="separator"
+              />
+            ) : null}
+          </div>
+        ))}
       </div>
     </main>
   );

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 export type TabId = string;
 export type TabGroupId = string;
@@ -36,6 +36,11 @@ export interface TabGroupViewProps {
   ariaLabel?: string;
   onTabSelect: (groupId: TabGroupId, tabId: TabId) => void;
   onTabClose?: (groupId: TabGroupId, tabId: TabId) => void;
+  onTabContextMenu?: (
+    groupId: TabGroupId,
+    tabId: TabId,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }
 
 export interface TabButtonsViewProps {
@@ -44,6 +49,11 @@ export interface TabButtonsViewProps {
   isActive: boolean;
   onTabSelect: (groupId: TabGroupId, tabId: TabId) => void;
   onTabClose?: (groupId: TabGroupId, tabId: TabId) => void;
+  onTabContextMenu?: (
+    groupId: TabGroupId,
+    tabId: TabId,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }
 
 export interface TabPanelViewProps {
@@ -62,6 +72,11 @@ export interface TabViewProps {
   className?: string;
   onTabSelect?: (groupId: TabGroupId, tabId: TabId) => void;
   onTabClose?: (groupId: TabGroupId, tabId: TabId) => void;
+  onTabContextMenu?: (
+    groupId: TabGroupId,
+    tabId: TabId,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }
 
 export interface TabsProps {
@@ -74,4 +89,9 @@ export interface TabsProps {
   className?: string;
   onTabSelect?: (groupId: TabGroupId, tabId: TabId) => void;
   onTabClose?: (groupId: TabGroupId, tabId: TabId) => void;
+  onTabContextMenu?: (
+    groupId: TabGroupId,
+    tabId: TabId,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => void;
 }

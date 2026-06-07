@@ -41,6 +41,7 @@ export default function Tabs({
   className,
   onTabSelect,
   onTabClose,
+  onTabContextMenu,
 }: TabsProps) {
   const group = useMemo<TabGroupModel>(() => {
     return {
@@ -62,6 +63,7 @@ export default function Tabs({
       defaultActiveTabId={defaultActiveTabId}
       group={group}
       onTabClose={onTabClose}
+      onTabContextMenu={onTabContextMenu}
       onTabSelect={onTabSelect}
       renderPanel={(tab) => panelsById[tab.id] ?? null}
     />

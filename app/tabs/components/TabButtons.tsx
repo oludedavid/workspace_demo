@@ -12,6 +12,7 @@ export default function TabButtons({
   isActive,
   onTabSelect,
   onTabClose,
+  onTabContextMenu,
 }: TabButtonsViewProps) {
   const tabButtonId = `${groupId}-${tab.id}`;
   const tabPanelId = `${groupId}-${tab.id}-panel`;
@@ -35,6 +36,9 @@ export default function TabButtons({
         disabled={tab.disabled}
         id={tabButtonId}
         onClick={() => onTabSelect(groupId, tab.id)}
+        onContextMenu={(event) => {
+          onTabContextMenu?.(groupId, tab.id, event);
+        }}
         role="tab"
         tabIndex={isActive ? 0 : -1}
         type="button"

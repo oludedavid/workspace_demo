@@ -46,6 +46,7 @@ export default function TabGroup({
   ariaLabel,
   onTabSelect,
   onTabClose,
+  onTabContextMenu,
 }: TabGroupViewProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -103,6 +104,7 @@ export default function TabGroup({
           isActive={tab.id === activeTabId}
           key={tab.id}
           onTabClose={onTabClose}
+          onTabContextMenu={onTabContextMenu}
           onTabSelect={onTabSelect}
           tab={tab}
         />

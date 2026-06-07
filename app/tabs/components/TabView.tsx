@@ -35,6 +35,7 @@ export default function TabView({
   className,
   onTabSelect,
   onTabClose,
+  onTabContextMenu,
 }: TabViewProps) {
   const tabs = useMemo(() => getOrderedTabs(group), [group]);
 
@@ -82,6 +83,7 @@ export default function TabView({
         ariaLabel={ariaLabel}
         groupId={group.id}
         onTabClose={onTabClose}
+        onTabContextMenu={onTabContextMenu}
         onTabSelect={handleTabSelect}
         tabs={tabs}
       />
